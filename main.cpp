@@ -16,12 +16,25 @@ struct User {
     int id;
     std::string name;
     std::string gender;
-    std::string dob;
+    unsigned int age;
     std::set<std::string> interests;
     std::string city;
     std::string country;
     std::vector<int> connections;
 };
+
+int calculateAge(const std::string& dobStr) {
+    int birthYear;
+    std::istringstream iss(dobStr.substr(0, 4));
+    iss >> birthYear;
+
+    // Get the current year
+    time_t t = time(0);
+    tm* now = localtime(&t);
+    int currentYear = now->tm_year + 1900;
+
+    return currentYear - birthYear;
+}
 
 std::string trim(const std::string& str) {
     size_t first = str.find_first_not_of(" \t\n\r\f\v");
@@ -76,7 +89,10 @@ std::vector<User> readCSV(const std::string& filename) {
         std::getline(iss, user.gender, ',');
 
         // Read DOB
-        std::getline(iss, user.dob, ',');
+        std::string dobStr;
+        if (std::getline(iss, dobStr, ',')) {
+            user.age = calculateAge(dobStr);
+        }
 
         // Read Interests
         std::string interestsStr;
@@ -118,7 +134,7 @@ void printUserInfo(const std::vector<User>& users) {
         std::cout << "User ID: " << user.id << std::endl;
         std::cout << "Name: " << user.name << std::endl;
         std::cout << "Gender: " << user.gender << std::endl;
-        std::cout << "DOB: " << user.dob << std::endl;
+        std::cout << "Age: " << user.age << std::endl;
         std::cout << "Interests: ";
         for (const auto& interest : user.interests) {
             std::cout << interest << ", ";
