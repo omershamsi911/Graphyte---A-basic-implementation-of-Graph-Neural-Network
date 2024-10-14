@@ -44,12 +44,19 @@ std::string trim(const std::string& str) {
 
 std::vector<std::string> splitInterests(const std::string& interestsStr) {
     std::vector<std::string> interests;
-    std::istringstream iss(interestsStr);
+
+    // Remove the outer quotes if they exist
+    std::string trimmedInterests = trim(interestsStr);
+    if (trimmedInterests.front() == '"' && trimmedInterests.back() == '"') {
+        trimmedInterests = trimmedInterests.substr(1, trimmedInterests.size() - 2);
+    }
+
+    std::istringstream iss(trimmedInterests);
     std::string interest;
     while (std::getline(iss, interest, ',')) {
         interest = trim(interest);
         if (!interest.empty()) {
-            // Remove surrounding quotes if present
+            // Remove surrounding single quotes if present
             if (interest.front() == '\'' && interest.back() == '\'') {
                 interest = interest.substr(1, interest.length() - 2);
             }
@@ -57,6 +64,34 @@ std::vector<std::string> splitInterests(const std::string& interestsStr) {
         }
     }
     return interests;
+}
+
+// Helper function to handle fields potentially containing commas and quotes
+std::string getField(std::istringstream& iss) {
+    std::string field;
+    char ch;
+    bool inQuotes = false;
+    std::ostringstream oss;
+
+    while (iss.get(ch)) {
+        if (ch == '"' && !inQuotes) {
+            inQuotes = true; // Field starts with a quote
+        } else if (ch == '"' && inQuotes) {
+            if (iss.peek() == ',') {
+                iss.get(); // Skip the comma after the closing quote
+                break;
+            } else {
+                inQuotes = false; // End of quoted section
+            }
+        } else if (ch == ',' && !inQuotes) {
+            break; // End of field when not in quotes
+        } else {
+            oss << ch; // Add character to the field
+        }
+    }
+
+    field = oss.str();
+    return trim(field);
 }
 
 std::vector<User> readCSV(const std::string& filename) {
@@ -74,38 +109,31 @@ std::vector<User> readCSV(const std::string& filename) {
 
     while (std::getline(file, line) && users.size() < MAX_USERS) {
         std::istringstream iss(line);
-        std::string field;
         User user;
 
         // Read UserID
-        if (std::getline(iss, field, ',')) {
-            user.id = std::stoi(field);
-        }
+        user.id = std::stoi(getField(iss));
 
         // Read Name
-        std::getline(iss, user.name, ',');
+        user.name = getField(iss);
 
         // Read Gender
-        std::getline(iss, user.gender, ',');
+        user.gender = getField(iss);
 
-        // Read DOB
-        std::string dobStr;
-        if (std::getline(iss, dobStr, ',')) {
-            user.age = calculateAge(dobStr);
-        }
+        // Read DOB and calculate age
+        std::string dobStr = getField(iss);
+        user.age = calculateAge(dobStr);
 
         // Read Interests
-        std::string interestsStr;
-        if (std::getline(iss, interestsStr, ',')) {
-            std::vector<std::string> interestsList = splitInterests(interestsStr);
-            user.interests.insert(interestsList.begin(), interestsList.end());
-        }
+        std::string interestsStr = getField(iss);
+        std::vector<std::string> interestsList = splitInterests(interestsStr);
+        user.interests.insert(interestsList.begin(), interestsList.end());
 
         // Read City
-        std::getline(iss, user.city, ',');
+        user.city = getField(iss);
 
         // Read Country
-        std::getline(iss, user.country);
+        user.country = getField(iss);
 
         users.push_back(user);
     }
