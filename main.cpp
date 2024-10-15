@@ -1,3 +1,11 @@
+/*
+implement some process to find learning rate
+implement some process to find proper epochs and/or learning size
+implement a more robust backpropagtion
+implement a more robust RELU
+implement a way to visualize data
+*/
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -13,7 +21,7 @@
 #include <cmath>
 #include <iomanip>
 
-const int MAX_USERS = 1000;
+const int MAX_USERS = 10;
 
 struct User {
     int id;
@@ -196,11 +204,10 @@ public:
         }
         return output;
     }
-
+    //May change
     void backward(const std::vector<std::vector<float>>& grad_output, 
                   const std::vector<std::vector<float>>& input, 
                   float learning_rate) {
-        // Gradient for the weights
         std::vector<std::vector<float>> grad_weights(weights.size(), 
                                                     std::vector<float>(weights[0].size(), 0.0f));
         for (size_t i = 0; i < input.size(); ++i) {
@@ -210,8 +217,6 @@ public:
                 }
             }
         }
-        
-        // Update weights using gradient descent
         for (size_t i = 0; i < weights.size(); ++i) {
             for (size_t j = 0; j < weights[0].size(); ++j) {
                 weights[i][j] -= learning_rate * grad_weights[i][j];
@@ -227,8 +232,7 @@ public:
     GCN(int input_dim, int hidden_dim, int output_dim)
     : layer1(input_dim, hidden_dim), layer2(hidden_dim, output_dim) {}
 
-    std::vector<std::vector<float>> forward(const std::vector<std::vector<float>>& input, 
-                                            const std::vector<std::vector<float>>& adj) {
+    std::vector<std::vector<float>> forward(const std::vector<std::vector<float>>& input, const std::vector<std::vector<float>>& adj) {
         h1 = layer1.forward(input, adj);
         output = layer2.forward(h1, adj);
         apply_softmax(output);
@@ -236,11 +240,10 @@ public:
     }
 
     void backward(const std::vector<float>& labels, float learning_rate) {
-        // Compute error (output - labels)
         std::vector<std::vector<float>> grad_output(output.size(), std::vector<float>(output[0].size(), 0.0f));
         for (size_t i = 0; i < output.size(); ++i) {
             for (size_t j = 0; j < output[0].size(); ++j) {
-                grad_output[i][j] = output[i][j] - labels[i]; // For binary cross-entropy loss
+                grad_output[i][j] = output[i][j] - labels[i];
             }
         }
         layer2.backward(grad_output, h1, learning_rate);
@@ -295,6 +298,8 @@ std::vector<std::vector<float>> create_node_features(const std::vector<User>& us
 }
 
 //link prediction
+//may change approach in the future
+//works for now
 float dot_product(const std::vector<float>& v1, const std::vector<float>& v2) {
     float result = 0.0f;
     for (size_t i = 0; i < v1.size(); ++i) {
@@ -316,7 +321,11 @@ float binary_cross_entropy(float predicted, float label) {
     return - (label * std::log(predicted) + (1 - label) * std::log(1 - predicted));
 }
 
-
+/*
+Firstly, Ensure the presence of no errors, i.e no logical bugs
+Secondly, change main to incorportate node embeddings
+Thirdly, implement the learning process properly
+*/
 int main() {
     std::string filename = "dataset.csv";
     std::vector<User> users = readCSV(filename);
@@ -333,50 +342,34 @@ int main() {
         }
     }
     std::cout << "Created graph with " << graph.num_nodes() << " nodes." << std::endl;
-    
-    // Create node features and normalize adjacency matrix
     std::vector<std::vector<float>> node_features = create_node_features(users);
     std::vector<std::vector<float>> normalized_adj = graph.normalize_adjacency();
-    
-    // Define the GCN dimensions
     int input_dim = node_features[0].size();
     int hidden_dim = 16;
     int output_dim = 2;
     GCN gcn(input_dim, hidden_dim, output_dim);
     
-    // Forward pass to get embeddings
     std::vector<std::vector<float>> embeddings = gcn.forward(node_features, normalized_adj);
-    
-    // Link prediction between users
     std::cout << "\nLink Predictions (for the first 5 user pairs):" << std::endl;
     std::cout << "User ID 1 | User ID 2 | Link Probability" << std::endl;
     std::cout << "-----------------------------------------" << std::endl;
     
     for (int i = 0; i < 5; ++i) {
         for (int j = i + 1; j < 5; ++j) {
-            // Predict link probability using dot product and sigmoid
             float link_prob = predict_link(embeddings[i], embeddings[j]);
             std::cout << std::setw(7) << users[i].id << "   | "
                       << std::setw(7) << users[j].id << "   | "
                       << std::setw(10) << std::fixed << std::setprecision(4) << link_prob << std::endl;
         }
     }
-    
-    // Example of backpropagation using true labels for a few link predictions
-    std::vector<float> true_labels = {1, 0, 1, 0, 1};  // Example labels: 1 if there's a link, 0 otherwise
+    std::vector<float> true_labels = {1, 0, 1, 0, 1};
     float learning_rate = 0.01;
-    
     for (size_t i = 0; i < true_labels.size(); ++i) {
         int user_i = i;
-        int user_j = i + 1;  // For simplicity, comparing consecutive users
+        int user_j = i + 1;
         float predicted_prob = predict_link(embeddings[user_i], embeddings[user_j]);
-        
-        // Calculate binary cross-entropy loss
         float loss = binary_cross_entropy(predicted_prob, true_labels[i]);
-        
-        // Output loss for debugging purposes
-        std::cout << "Loss for link between User " << users[user_i].id << " and User " << users[user_j].id
-                  << ": " << loss << std::endl;
+        std::cout << "Loss for link between User " << users[user_i].id << " and User " << users[user_j].id << ": " << loss << std::endl;
         gcn.backward({true_labels[i]}, learning_rate);
     }
     return 0;
