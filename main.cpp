@@ -1,3 +1,11 @@
+/*
+implement some process to find learning rate
+implement some process to find proper epochs and/or learning size
+implement a more robust backpropagtion
+implement a more robust RELU
+implement a way to visualize data
+*/
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -9,8 +17,11 @@
 #include <unordered_map>
 #include <cctype>
 #include <ctime>
+#include <random>
+#include <cmath>
+#include <iomanip>
 
-const int MAX_USERS = 1000;
+const int MAX_USERS = 10;
 
 struct User {
     int id;
@@ -27,12 +38,9 @@ int calculateAge(const std::string& dobStr) {
     int birthYear;
     std::istringstream iss(dobStr.substr(0, 4));
     iss >> birthYear;
-
-    // Get the current year
     time_t t = time(0);
     tm* now = localtime(&t);
     int currentYear = now->tm_year + 1900;
-
     return currentYear - birthYear;
 }
 
@@ -44,19 +52,15 @@ std::string trim(const std::string& str) {
 
 std::vector<std::string> splitInterests(const std::string& interestsStr) {
     std::vector<std::string> interests;
-
-    // Remove the outer quotes if they exist
     std::string trimmedInterests = trim(interestsStr);
     if (trimmedInterests.front() == '"' && trimmedInterests.back() == '"') {
         trimmedInterests = trimmedInterests.substr(1, trimmedInterests.size() - 2);
     }
-
     std::istringstream iss(trimmedInterests);
     std::string interest;
     while (std::getline(iss, interest, ',')) {
         interest = trim(interest);
         if (!interest.empty()) {
-            // Remove surrounding single quotes if present
             if (interest.front() == '\'' && interest.back() == '\'') {
                 interest = interest.substr(1, interest.length() - 2);
             }
@@ -66,30 +70,27 @@ std::vector<std::string> splitInterests(const std::string& interestsStr) {
     return interests;
 }
 
-// Helper function to handle fields potentially containing commas and quotes
 std::string getField(std::istringstream& iss) {
     std::string field;
     char ch;
     bool inQuotes = false;
     std::ostringstream oss;
-
     while (iss.get(ch)) {
         if (ch == '"' && !inQuotes) {
-            inQuotes = true; // Field starts with a quote
+            inQuotes = true;
         } else if (ch == '"' && inQuotes) {
             if (iss.peek() == ',') {
-                iss.get(); // Skip the comma after the closing quote
+                iss.get();
                 break;
             } else {
-                inQuotes = false; // End of quoted section
+                inQuotes = false;
             }
         } else if (ch == ',' && !inQuotes) {
-            break; // End of field when not in quotes
+            break;
         } else {
-            oss << ch; // Add character to the field
+            oss << ch;
         }
     }
-
     field = oss.str();
     return trim(field);
 }
@@ -98,46 +99,26 @@ std::vector<User> readCSV(const std::string& filename) {
     std::vector<User> users;
     std::ifstream file(filename);
     std::string line;
-
     if (!file.is_open()) {
         std::cerr << "Error opening file: " << filename << std::endl;
         return users;
     }
-
-    // Skip header
     std::getline(file, line);
-
     while (std::getline(file, line) && users.size() < MAX_USERS) {
         std::istringstream iss(line);
         User user;
-
-        // Read UserID
         user.id = std::stoi(getField(iss));
-
-        // Read Name
         user.name = getField(iss);
-
-        // Read Gender
         user.gender = getField(iss);
-
-        // Read DOB and calculate age
         std::string dobStr = getField(iss);
         user.age = calculateAge(dobStr);
-
-        // Read Interests
         std::string interestsStr = getField(iss);
         std::vector<std::string> interestsList = splitInterests(interestsStr);
         user.interests.insert(interestsList.begin(), interestsList.end());
-
-        // Read City
         user.city = getField(iss);
-
-        // Read Country
         user.country = getField(iss);
-
         users.push_back(user);
     }
-
     return users;
 }
 
@@ -157,40 +138,239 @@ void createAdjacencyList(std::vector<User>& users) {
     }
 }
 
-void printUserInfo(const std::vector<User>& users) {
-    for (const auto& user : users) {
-        std::cout << "User ID: " << user.id << std::endl;
-        std::cout << "Name: " << user.name << std::endl;
-        std::cout << "Gender: " << user.gender << std::endl;
-        std::cout << "Age: " << user.age << std::endl;
-        std::cout << "Interests: ";
-        for (const auto& interest : user.interests) {
-            std::cout << interest << ", ";
-        }
-        std::cout << std::endl;
-        std::cout << "City: " << user.city << std::endl;
-        std::cout << "Country: " << user.country << std::endl;
-        std::cout << "Connections: ";
-        for (int connection : user.connections) {
-            std::cout << connection << " ";
-        }
-        std::cout << std::endl << std::endl;
+class Graph {
+public:
+    Graph(int num_nodes) : adj_list(num_nodes) {}
+
+    void add_edge(int u, int v) {
+        adj_list[u].push_back(v);
+        adj_list[v].push_back(u);
     }
+
+    const std::vector<int>& neighbors(int node) const {
+        return adj_list[node];
+    }
+
+    int num_nodes() const {
+        return adj_list.size();
+    }
+
+    std::vector<std::vector<float>> normalize_adjacency() const {
+        std::vector<std::vector<float>> normalized_adj(num_nodes());
+        std::vector<float> degree(num_nodes(), 0.0f);
+        for (int i = 0; i < num_nodes(); ++i) {
+            degree[i] = adj_list[i].size();
+        }
+        for (int i = 0; i < num_nodes(); ++i) {
+            for (int j : adj_list[i]) {
+                float norm_value = 1.0f / std::sqrt(degree[i] * degree[j]);
+                normalized_adj[i].push_back(norm_value);
+            }
+        }
+        return normalized_adj;
+    }
+private:
+    std::vector<std::vector<int>> adj_list;
+};
+
+class GCNLayer {
+public:
+    GCNLayer(int input_dim, int output_dim) : weights(input_dim, std::vector<float>(output_dim)) {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::normal_distribution<> d(0, 1);
+        for (int i = 0; i < input_dim; ++i) {
+            for (int j = 0; j < output_dim; ++j) {
+                weights[i][j] = d(gen) / std::sqrt(input_dim);
+            }
+        }
+    }
+
+    std::vector<std::vector<float>> forward(const std::vector<std::vector<float>>& input, const std::vector<std::vector<float>>& adj) {
+        std::vector<std::vector<float>> output(input.size(), std::vector<float>(weights[0].size(), 0.0f));
+        for (size_t i = 0; i < input.size(); ++i) {
+            for (size_t j = 0; j < adj[i].size(); ++j) {
+                for (size_t k = 0; k < weights[0].size(); ++k) {
+                    for (size_t l = 0; l < input[0].size(); ++l) {
+                        output[i][k] += adj[i][j] * input[j][l] * weights[l][k];
+                    }
+                }
+            }
+        }
+        for (auto& row : output) {
+            for (auto& val : row) {
+                val = std::max(0.0f, val);
+            }
+        }
+        return output;
+    }
+    //May change
+    void backward(const std::vector<std::vector<float>>& grad_output, 
+                  const std::vector<std::vector<float>>& input, 
+                  float learning_rate) {
+        std::vector<std::vector<float>> grad_weights(weights.size(), 
+                                                    std::vector<float>(weights[0].size(), 0.0f));
+        for (size_t i = 0; i < input.size(); ++i) {
+            for (size_t j = 0; j < weights[0].size(); ++j) {
+                for (size_t k = 0; k < input[0].size(); ++k) {
+                    grad_weights[k][j] += input[i][k] * grad_output[i][j];
+                }
+            }
+        }
+        for (size_t i = 0; i < weights.size(); ++i) {
+            for (size_t j = 0; j < weights[0].size(); ++j) {
+                weights[i][j] -= learning_rate * grad_weights[i][j];
+            }
+        }
+    }
+
+    std::vector<std::vector<float>> weights;
+};
+
+class GCN {
+public:
+    GCN(int input_dim, int hidden_dim, int output_dim)
+    : layer1(input_dim, hidden_dim), layer2(hidden_dim, output_dim) {}
+
+    std::vector<std::vector<float>> forward(const std::vector<std::vector<float>>& input, const std::vector<std::vector<float>>& adj) {
+        h1 = layer1.forward(input, adj);
+        output = layer2.forward(h1, adj);
+        apply_softmax(output);
+        return output;
+    }
+
+    void backward(const std::vector<float>& labels, float learning_rate) {
+        std::vector<std::vector<float>> grad_output(output.size(), std::vector<float>(output[0].size(), 0.0f));
+        for (size_t i = 0; i < output.size(); ++i) {
+            for (size_t j = 0; j < output[0].size(); ++j) {
+                grad_output[i][j] = output[i][j] - labels[i];
+            }
+        }
+        layer2.backward(grad_output, h1, learning_rate);
+        std::vector<std::vector<float>> grad_h1 = compute_grad_h1(grad_output, layer2.weights);
+        layer1.backward(grad_h1, input, learning_rate);
+    }
+
+    void apply_softmax(std::vector<std::vector<float>>& output) {
+        for (auto& row : output) {
+            float max_val = *std::max_element(row.begin(), row.end());
+            float sum = 0.0f;
+            for (auto& val : row) {
+                val = std::exp(val - max_val);
+                sum += val;
+            }
+            for (auto& val : row) {
+                val /= sum;
+            }
+        }
+    }
+
+    std::vector<std::vector<float>> compute_grad_h1(const std::vector<std::vector<float>>& grad_output, 
+                                                    const std::vector<std::vector<float>>& weights) {
+        std::vector<std::vector<float>> grad_h1(grad_output.size(), std::vector<float>(weights.size(), 0.0f));
+        for (size_t i = 0; i < grad_output.size(); ++i) {
+            for (size_t j = 0; j < weights.size(); ++j) {
+                for (size_t k = 0; k < grad_output[0].size(); ++k) {
+                    grad_h1[i][j] += grad_output[i][k] * weights[j][k];
+                }
+            }
+        }
+        return grad_h1;
+    }
+
+    GCNLayer layer1;
+    GCNLayer layer2;
+    std::vector<std::vector<float>> h1;
+    std::vector<std::vector<float>> output;
+    std::vector<std::vector<float>> input;
+};
+
+std::vector<std::vector<float>> create_node_features(const std::vector<User>& users) {
+    std::vector<std::vector<float>> features(users.size(), std::vector<float>(3));
+
+    for (size_t i = 0; i < users.size(); ++i) {
+        features[i][0] = (users[i].gender == "Male") ? 1.0f : 0.0f;
+        features[i][1] = static_cast<float>(users[i].age) / 100.0f;
+        features[i][2] = static_cast<float>(users[i].interests.size()) / 10.0f;
+    }
+
+    return features;
 }
 
+//link prediction
+//may change approach in the future
+//works for now
+float dot_product(const std::vector<float>& v1, const std::vector<float>& v2) {
+    float result = 0.0f;
+    for (size_t i = 0; i < v1.size(); ++i) {
+        result += v1[i] * v2[i];
+    }
+    return result;
+}
+
+float sigmoid(float x) {
+    return 1 / (1 + std::exp(-x));
+}
+
+float predict_link(const std::vector<float>& embedding_i, const std::vector<float>& embedding_j) {
+    return sigmoid(dot_product(embedding_i, embedding_j));
+}
+
+//loss calculation
+float binary_cross_entropy(float predicted, float label) {
+    return - (label * std::log(predicted) + (1 - label) * std::log(1 - predicted));
+}
+
+/*
+Firstly, Ensure the presence of no errors, i.e no logical bugs
+Secondly, change main to incorportate node embeddings
+Thirdly, implement the learning process properly
+*/
 int main() {
     std::string filename = "dataset.csv";
     std::vector<User> users = readCSV(filename);
-    
     if (users.empty()) {
         std::cerr << "No valid users found in the CSV file." << std::endl;
         return 1;
     }
-
+    std::cout << "Loaded " << users.size() << " users from the dataset." << std::endl;
     createAdjacencyList(users);
-
-    std::cout << "User Information and Adjacency List for " << users.size() << " users:" << std::endl;
-    printUserInfo(users);
-
+    Graph graph(users.size());
+    for (size_t i = 0; i < users.size(); ++i) {
+        for (int connection : users[i].connections) {
+            graph.add_edge(i, connection);
+        }
+    }
+    std::cout << "Created graph with " << graph.num_nodes() << " nodes." << std::endl;
+    std::vector<std::vector<float>> node_features = create_node_features(users);
+    std::vector<std::vector<float>> normalized_adj = graph.normalize_adjacency();
+    int input_dim = node_features[0].size();
+    int hidden_dim = 16;
+    int output_dim = 2;
+    GCN gcn(input_dim, hidden_dim, output_dim);
+    
+    std::vector<std::vector<float>> embeddings = gcn.forward(node_features, normalized_adj);
+    std::cout << "\nLink Predictions (for the first 5 user pairs):" << std::endl;
+    std::cout << "User ID 1 | User ID 2 | Link Probability" << std::endl;
+    std::cout << "-----------------------------------------" << std::endl;
+    
+    for (int i = 0; i < 5; ++i) {
+        for (int j = i + 1; j < 5; ++j) {
+            float link_prob = predict_link(embeddings[i], embeddings[j]);
+            std::cout << std::setw(7) << users[i].id << "   | "
+                      << std::setw(7) << users[j].id << "   | "
+                      << std::setw(10) << std::fixed << std::setprecision(4) << link_prob << std::endl;
+        }
+    }
+    std::vector<float> true_labels = {1, 0, 1, 0, 1};
+    float learning_rate = 0.01;
+    for (size_t i = 0; i < true_labels.size(); ++i) {
+        int user_i = i;
+        int user_j = i + 1;
+        float predicted_prob = predict_link(embeddings[user_i], embeddings[user_j]);
+        float loss = binary_cross_entropy(predicted_prob, true_labels[i]);
+        std::cout << "Loss for link between User " << users[user_i].id << " and User " << users[user_j].id << ": " << loss << std::endl;
+        gcn.backward({true_labels[i]}, learning_rate);
+    }
     return 0;
 }
